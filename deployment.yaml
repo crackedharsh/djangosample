@@ -14,6 +14,6 @@ spec:
     spec:
       containers:
       - name: myproject
-        image: myproject:latest
+        image: harshlohia2626/django-image
         ports:
         - containerPort: 8000

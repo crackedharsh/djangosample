@@ -7,5 +7,5 @@ spec:
     app: myproject
   ports:
     - protocol: TCP
-      port: 80
+      port: 8081
       targetPort: 8000
