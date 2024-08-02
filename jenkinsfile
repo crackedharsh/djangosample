@@ -1,0 +1,95 @@
+pipeline {
+    agent {
+        kubernetes {
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  serviceAccountName: jenkins-admin
+  containers:
+  - name: jnlp
+    image: jenkins/inbound-agent:3256.v88a_f6e922152-1
+  - name: docker
+    image: docker:20.10.7
+    command:
+    - cat
+    tty: true
+    volumeMounts:
+    - mountPath: /var/run/docker.sock
+      name: docker-sock
+  - name: kubectl
+    image: portainer/kubectl-shell:latest
+    command:
+    - cat
+    tty: true
+    volumeMounts:
+    - name: in-cluster-kubeconfig
+      mountPath: /root/.kube/config
+      subPath: config
+
+  volumes:
+    - name: docker-sock
+      hostPath:
+        path: /var/run/docker.sock
+    - name: in-cluster-kubeconfig
+      secret:
+        secretName: in-cluster-kubeconfig
+      items:
+       - key: config
+         path: config
+'''
+        }
+    }
+    environment {
+        DOCKER_IMAGE = 'harshlohia2626/django-image'
+        KUBE_CONFIG_FILE_ID = 'minikube-credentials'
+        GITHUB_REPO = 'https://github.com/crackedharsh/djangosample.git'
+        BRANCH = 'master'
+    }
+    stages {
+        stage('Clone repository') {
+            steps {
+                git branch: "${BRANCH}", url: "${GITHUB_REPO}"
+            }
+        }
+        stage('Build Docker Image') {
+            steps {
+                container('docker') {
+                    sh "docker build -t ${DOCKER_IMAGE}:${env.BUILD_ID} ."
+                }
+            }
+        }
+        stage('Push Docker Image') {
+            steps {
+                container('docker') {
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                        sh "echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin"
+                        sh "docker push ${DOCKER_IMAGE}:${env.BUILD_ID}"
+                    }
+                }
+            }
+        }
+        stage('Deploy to kubernetes'){
+            steps{
+                container('kubectl'){
+                     script {
+                        def TOKEN = sh(script: 'cat /var/run/secrets/kubernetes.io/serviceaccount/token', returnStdout: true).trim()
+
+                        withEnv(["KUBE_CONFIG_DATA=${TOKEN}"]) {
+                            sh '''
+                            kubectl config set-cluster in-cluster --server=https://kubernetes.default.svc --certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+                            kubectl config set-credentials serviceaccount --token=${KUBE_CONFIG_DATA}
+                            kubectl config set-context in-cluster --cluster=in-cluster --user=serviceaccount
+                            kubectl config use-context in-cluster
+                            kubectl get nodes
+                            kubectl apply -f deployment.yaml
+                            kubectl apply -f service.yaml
+                            '''
+                        }
+                    }
+
+                }
+            }
+        }
+    }
+}
