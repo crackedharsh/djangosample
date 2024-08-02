@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: myproject
-        image: hello-world
+        image: harshlohia2626/django-image:44
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
